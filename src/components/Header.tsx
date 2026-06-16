@@ -55,17 +55,20 @@ export function Header() {
           ))}
         </ul>
 
-        <a
-          href="#contact"
-          className={cn(
-            "hidden md:inline-flex items-center gap-2 text-sm px-5 py-2.5 transition-all duration-300",
-            scrolled
-              ? "bg-white text-foreground border border-foreground/20 hover:bg-foreground hover:text-white"
-              : "bg-white text-foreground border border-foreground/20 hover:bg-foreground hover:text-white",
-          )}
-        >
-          Связаться
-        </a>
+        <div className="hidden md:flex items-center gap-4">
+          <a
+            href="tel:+79877521019"
+            className="text-white/80 hover:text-white text-sm tracking-wide transition-colors duration-300"
+          >
+            +7 (987) 752-10-19
+          </a>
+          <a
+            href="#contact"
+            className="inline-flex items-center gap-2 text-sm px-5 py-2.5 bg-white text-foreground border border-foreground/20 hover:bg-foreground hover:text-white transition-all duration-300"
+          >
+            Связаться
+          </a>
+        </div>
 
         <button
           className="md:hidden z-50 transition-colors duration-300 text-white"
@@ -113,13 +116,22 @@ export function Header() {
             ))}
           </ul>
 
-          <a
-            href="#contact"
-            className="inline-flex items-center justify-center gap-2 text-sm px-5 py-2.5 bg-white text-foreground border border-foreground/20 hover:bg-foreground hover:text-white transition-all duration-300 mb-4"
-            onClick={closeMobileMenu}
-          >
-            Связаться
-          </a>
+          <div className="flex flex-col gap-3 mb-4">
+            <a
+              href="tel:+79877521019"
+              className="text-white/70 text-lg tracking-wide"
+              onClick={closeMobileMenu}
+            >
+              +7 (987) 752-10-19
+            </a>
+            <a
+              href="#contact"
+              className="inline-flex items-center justify-center gap-2 text-sm px-5 py-2.5 bg-white text-foreground border border-foreground/20 hover:bg-foreground hover:text-white transition-all duration-300"
+              onClick={closeMobileMenu}
+            >
+              Связаться
+            </a>
+          </div>
         </div>
       </div>
     </header>
