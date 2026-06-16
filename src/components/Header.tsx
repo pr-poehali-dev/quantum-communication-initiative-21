@@ -63,6 +63,12 @@ export function Header() {
             +7 (987) 752-10-19
           </a>
           <a
+            href="mailto:MKM-NN52@ya.ru"
+            className="text-white/80 hover:text-white text-sm tracking-wide transition-colors duration-300"
+          >
+            MKM-NN52@ya.ru
+          </a>
+          <a
             href="#contact"
             className="inline-flex items-center gap-2 text-sm px-5 py-2.5 bg-white text-foreground border border-foreground/20 hover:bg-foreground hover:text-white transition-all duration-300"
           >
