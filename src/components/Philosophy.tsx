@@ -3,23 +3,23 @@ import { HighlightedText } from "./HighlightedText"
 
 const philosophyItems = [
   {
-    title: "Минимализм со смыслом",
+    title: "Опыт и репутация",
     description:
-      "Каждый элемент имеет свое назначение и пространство для дыхания. Мы убираем лишнее, чтобы раскрыть то, что действительно важно.",
+      "За годы работы мы реализовали десятки объектов разной сложности. Наш опыт — это гарантия того, что проект будет сдан в срок и в полном соответствии с проектом.",
   },
   {
-    title: "Архитектурный подход",
+    title: "Полный цикл работ",
     description:
-      "Планировки, вдохновленные структурой, ритмом и материальностью. Здания, которые говорят через пропорции и свет.",
+      "От проектирования и фундамента до отделки и благоустройства. Вы получаете готовый объект «под ключ», не привлекая множество подрядчиков.",
   },
   {
-    title: "Естественная динамика",
+    title: "Качество материалов",
     description:
-      "Движение поддерживает восприятие, но никогда не отвлекает. Анимация, которая ощущается естественно, как свет, скользящий по комнате.",
+      "Мы работаем только с проверенными поставщиками и используем сертифицированные материалы. Каждый этап проходит строгий контроль качества.",
   },
   {
-    title: "Вневременная эстетика",
-    description: "Элегантный, спокойный и долговечный визуальный язык. Дизайн, который превосходит тренды и стареет с достоинством.",
+    title: "Честные сроки и сметы",
+    description: "Прозрачное ценообразование без скрытых доплат. Фиксируем стоимость и сроки в договоре и строго их соблюдаем.",
   },
 ]
 
@@ -53,11 +53,11 @@ export function Philosophy() {
         <div className="grid lg:grid-cols-2 gap-16 lg:gap-24">
           {/* Left column - Title and image */}
           <div className="lg:sticky lg:top-32 lg:self-start">
-            <p className="text-muted-foreground text-sm tracking-[0.3em] uppercase mb-6">Наша философия</p>
+            <p className="text-muted-foreground text-sm tracking-[0.3em] uppercase mb-6">О компании</p>
             <h2 className="text-6xl md:text-6xl font-medium leading-[1.15] tracking-tight mb-6 text-balance lg:text-8xl">
-              Дизайн с
+              Строим с
               <br />
-              <HighlightedText>намерением</HighlightedText>
+              <HighlightedText>2008 года</HighlightedText>
             </h2>
 
             <div className="relative hidden lg:block">
@@ -72,7 +72,7 @@ export function Philosophy() {
           {/* Right column - Description and Philosophy items */}
           <div className="space-y-6 lg:pt-48">
             <p className="text-muted-foreground text-lg leading-relaxed max-w-md mb-12">
-              Архитектура - это больше, чем конструкция. Это то, как мы воспринимаем мир. Мы создаем пространства, которые питают человеческий дух.
+              МКМ-НН — строительная компания из Нижнего Новгорода. Более 15 лет мы возводим жилые, коммерческие и промышленные объекты, выполняя весь спектр работ от фундамента до сдачи под ключ.
             </p>
 
             {philosophyItems.map((item, index) => (
