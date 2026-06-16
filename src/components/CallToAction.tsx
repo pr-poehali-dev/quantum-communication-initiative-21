@@ -113,7 +113,7 @@ export function CallToAction() {
                   {!loading && <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />}
                 </button>
                 <a
-                  href="tel:+78312000000"
+                  href="tel:+79877521019"
                   className="inline-flex items-center justify-center gap-2 border border-primary-foreground/30 px-8 py-4 text-sm tracking-wide hover:bg-primary-foreground/10 transition-colors duration-300"
                 >
                   Позвонить нам
