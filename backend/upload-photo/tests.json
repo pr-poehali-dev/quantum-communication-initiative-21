@@ -1,0 +1,19 @@
+{
+  "tests": [
+    {
+      "name": "Wrong password",
+      "method": "POST",
+      "path": "/",
+      "body": {"password": "wrong", "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg=="},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Неверный пароль"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "OPTIONS CORS",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    }
+  ]
+}
