@@ -3,20 +3,12 @@ import { X, ChevronLeft, ChevronRight } from "lucide-react"
 import func2url from "../../backend/func2url.json"
 
 const GET_PHOTOS_URL = (func2url as Record<string, string>)["get-photos"]
+const MANAGE_PROJECTS_URL = (func2url as Record<string, string>)["manage-projects"]
 
-const PROJECTS = [
-  { id: 1, title: "МТС-2, д. Радумля", category: "Вентиляция, кондиционирование, водопровод, канализация · 15 000 м²", location: "Московская область", year: "2023" },
-  { id: 2, title: "ЖК Космодемьянская", category: "Механические системы: вентиляция, охлаждение, отопление, кондиционирование · 9 000 м²", location: "Москва", year: "2023" },
-  { id: 3, title: "Склад «Сладкая Жизнь»", category: "Отопление, вентиляция, кондиционирование, охлаждение серверных, НВК · 4 500 м²", location: "Дзержинск", year: "2022" },
-  { id: 4, title: "«Сладкая Жизнь»", category: "Монтаж сетей водопровода и канализации (НВК) · 12 000 м²", location: "Нижний Новгород", year: "2022" },
-  { id: 5, title: "Мясокомбинат, д. Чернышиха", category: "Монтаж сетей водопровода и канализации (НВК) · 200 000 м²", location: "Нижегородская область", year: "2021" },
-  { id: 6, title: "Завод Coca-Cola", category: "Монтаж инженерных сетей ОВиК, монтаж и ПНР", location: "Новосибирск", year: "2020" },
-  { id: 7, title: "ЖК «Filicity»", category: "Монтаж инженерных сетей ОВиК, монтаж и ПНР", location: "Москва", year: "2024" },
-]
-
+type Project = { id: number; title: string; category: string; location: string; year: string }
 type Photo = { id: number; url: string }
 type PhotoMap = Record<string, Photo[]>
-type SelectedProject = typeof PROJECTS[0] & { gallery: Photo[] }
+type SelectedProject = Project & { gallery: Photo[] }
 
 function GalleryModal({ project, onClose }: { project: SelectedProject; onClose: () => void }) {
   const [activeIndex, setActiveIndex] = useState(0)
@@ -88,12 +80,17 @@ export function Projects() {
   const [selectedProject, setSelectedProject] = useState<SelectedProject | null>(null)
   const [revealedImages, setRevealedImages] = useState<Set<number>>(new Set())
   const [photos, setPhotos] = useState<PhotoMap>({})
+  const [projects, setProjects] = useState<Project[]>([])
   const imageRefs = useRef<(HTMLDivElement | null)[]>([])
 
   useEffect(() => {
     fetch(GET_PHOTOS_URL)
       .then((r) => r.json())
       .then((data) => setPhotos(data.photos || {}))
+      .catch(() => {})
+    fetch(MANAGE_PROJECTS_URL)
+      .then((r) => r.json())
+      .then((data) => setProjects(data.projects || []))
       .catch(() => {})
   }, [])
 
@@ -103,7 +100,7 @@ export function Projects() {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             const index = imageRefs.current.indexOf(entry.target as HTMLDivElement)
-            if (index !== -1) setRevealedImages((prev) => new Set(prev).add(PROJECTS[index].id))
+            if (index !== -1) setRevealedImages((prev) => new Set(prev).add(projects[index]?.id))
           }
         })
       },
@@ -111,9 +108,9 @@ export function Projects() {
     )
     imageRefs.current.forEach((ref) => { if (ref) observer.observe(ref) })
     return () => observer.disconnect()
-  }, [])
+  }, [projects])
 
-  const openProject = (project: typeof PROJECTS[0]) => {
+  const openProject = (project: Project) => {
     const gallery = photos[String(project.id)] || []
     setSelectedProject({ ...project, gallery })
   }
@@ -130,7 +127,7 @@ export function Projects() {
           </div>
 
           <div className="grid md:grid-cols-2 gap-6 md:gap-8">
-            {PROJECTS.map((project, index) => {
+            {projects.map((project, index) => {
               const gallery = photos[String(project.id)] || []
               const cover = gallery[0]?.url
               return (

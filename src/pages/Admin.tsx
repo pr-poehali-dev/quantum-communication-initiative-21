@@ -5,20 +5,13 @@ import Icon from "@/components/ui/icon"
 const UPLOAD_URL = (func2url as Record<string, string>)["upload-photo"]
 const GET_PHOTOS_URL = (func2url as Record<string, string>)["get-photos"]
 const REORDER_URL = (func2url as Record<string, string>)["reorder-photos"]
+const MANAGE_URL = (func2url as Record<string, string>)["manage-projects"]
 const ADMIN_PASSWORD = "mkm2024admin"
 
-const PROJECTS = [
-  { id: 1, title: "МТС-2, д. Радумля" },
-  { id: 2, title: "ЖК Космодемьянская" },
-  { id: 3, title: "Склад «Сладкая Жизнь»" },
-  { id: 4, title: "«Сладкая Жизнь»" },
-  { id: 5, title: "Мясокомбинат, д. Чернышиха" },
-  { id: 6, title: "Завод Coca-Cola" },
-  { id: 7, title: "ЖК «Filicity»" },
-]
-
+type Project = { id: number; title: string; category: string; location: string; year: string }
 type Photo = { id: number; url: string }
 type PhotoMap = Record<string, Photo[]>
+type Screen = "projects" | "photos" | "edit" | "new"
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -33,40 +26,77 @@ export default function Admin() {
   const [password, setPassword] = useState("")
   const [authed, setAuthed] = useState(false)
   const [authError, setAuthError] = useState("")
-  const [selectedProject, setSelectedProject] = useState<number | null>(null)
+  const [screen, setScreen] = useState<Screen>("projects")
+  const [projects, setProjects] = useState<Project[]>([])
   const [photos, setPhotos] = useState<PhotoMap>({})
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [currentPhotos, setCurrentPhotos] = useState<Photo[]>([])
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
+  const [dragOverUpload, setDragOverUpload] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const [form, setForm] = useState({ title: "", category: "", location: "", year: "" })
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const loadPhotos = () => {
-    fetch(GET_PHOTOS_URL)
-      .then((r) => r.json())
-      .then((data) => setPhotos(data.photos || {}))
-      .catch(() => {})
+  const loadAll = () => {
+    fetch(MANAGE_URL).then(r => r.json()).then(d => setProjects(d.projects || [])).catch(() => {})
+    fetch(GET_PHOTOS_URL).then(r => r.json()).then(d => setPhotos(d.photos || {})).catch(() => {})
   }
 
-  useEffect(() => {
-    if (authed) loadPhotos()
-  }, [authed])
+  useEffect(() => { if (authed) loadAll() }, [authed])
 
   useEffect(() => {
-    if (selectedProject) {
-      setCurrentPhotos(photos[String(selectedProject)] || [])
-    }
+    if (selectedProject) setCurrentPhotos(photos[String(selectedProject.id)] || [])
   }, [selectedProject, photos])
 
   const handleLogin = () => {
-    if (password === ADMIN_PASSWORD) {
-      setAuthed(true)
-      setAuthError("")
+    if (password === ADMIN_PASSWORD) { setAuthed(true); setAuthError("") }
+    else setAuthError("Неверный пароль")
+  }
+
+  const openPhotos = (p: Project) => { setSelectedProject(p); setScreen("photos") }
+
+  const openEdit = (p: Project) => {
+    setSelectedProject(p)
+    setForm({ title: p.title, category: p.category, location: p.location, year: p.year })
+    setScreen("edit")
+  }
+
+  const openNew = () => {
+    setForm({ title: "", category: "", location: "", year: new Date().getFullYear().toString() })
+    setScreen("new")
+  }
+
+  const handleSaveProject = async () => {
+    if (!form.title.trim()) return
+    setSaving(true)
+    if (screen === "edit" && selectedProject) {
+      await fetch(MANAGE_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: ADMIN_PASSWORD, id: selectedProject.id, ...form }),
+      })
     } else {
-      setAuthError("Неверный пароль")
+      await fetch(MANAGE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: ADMIN_PASSWORD, ...form }),
+      })
     }
+    setSaving(false)
+    loadAll()
+    setScreen("projects")
+  }
+
+  const handleDeleteProject = async (p: Project) => {
+    if (!confirm(`Удалить объект «${p.title}» и все его фото?`)) return
+    await fetch(MANAGE_URL, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, id: p.id }),
+    })
+    loadAll()
   }
 
   const handleFiles = async (files: FileList | null) => {
@@ -77,20 +107,20 @@ export default function Admin() {
       await fetch(UPLOAD_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: ADMIN_PASSWORD, image: base64, contentType: file.type, projectId: selectedProject }),
+        body: JSON.stringify({ password: ADMIN_PASSWORD, image: base64, contentType: file.type, projectId: selectedProject.id }),
       })
     }
     setUploading(false)
-    loadPhotos()
+    loadAll()
   }
 
-  const handleDelete = async (photoId: number) => {
+  const handleDeletePhoto = async (photoId: number) => {
     await fetch(UPLOAD_URL, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: ADMIN_PASSWORD, id: photoId }),
     })
-    loadPhotos()
+    loadAll()
   }
 
   const handleSaveOrder = async () => {
@@ -98,16 +128,14 @@ export default function Admin() {
     await fetch(REORDER_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: ADMIN_PASSWORD, ids: currentPhotos.map((p) => p.id) }),
+      body: JSON.stringify({ password: ADMIN_PASSWORD, ids: currentPhotos.map(p => p.id) }),
     })
     setSaving(false)
-    loadPhotos()
+    loadAll()
   }
 
-  // drag-and-drop handlers
   const onDragStart = (i: number) => setDragIndex(i)
   const onDragEnter = (i: number) => setDropIndex(i)
-
   const onDragEnd = () => {
     if (dragIndex !== null && dropIndex !== null && dragIndex !== dropIndex) {
       const updated = [...currentPhotos]
@@ -125,19 +153,14 @@ export default function Admin() {
         <div className="w-full max-w-sm">
           <h1 className="text-2xl font-medium mb-8 text-center">Вход в панель управления</h1>
           <div className="space-y-4">
-            <input
-              type="password"
-              placeholder="Пароль"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+            <input type="password" placeholder="Пароль" value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
               className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background"
             />
             {authError && <p className="text-red-500 text-sm">{authError}</p>}
-            <button
-              onClick={handleLogin}
-              className="w-full bg-foreground text-background py-3 text-sm font-medium hover:opacity-80 transition-opacity"
-            >
+            <button onClick={handleLogin}
+              className="w-full bg-foreground text-background py-3 text-sm font-medium hover:opacity-80 transition-opacity">
               Войти
             </button>
           </div>
@@ -146,59 +169,124 @@ export default function Admin() {
     )
   }
 
-  const savedOrder = photos[String(selectedProject)] || []
-  const orderChanged = JSON.stringify(currentPhotos.map((p) => p.id)) !== JSON.stringify(savedOrder.map((p) => p.id))
+  const savedOrder = photos[String(selectedProject?.id)] || []
+  const orderChanged = JSON.stringify(currentPhotos.map(p => p.id)) !== JSON.stringify(savedOrder.map(p => p.id))
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <h1 className="text-lg font-medium">Управление фотографиями</h1>
+      <div className="border-b border-border px-6 py-4 flex items-center gap-4">
+        {screen !== "projects" && (
+          <button onClick={() => setScreen("projects")} className="text-muted-foreground hover:text-foreground transition-colors">
+            <Icon name="ArrowLeft" size={18} />
+          </button>
+        )}
+        <h1 className="text-lg font-medium flex-1">
+          {screen === "projects" && "Управление портфолио"}
+          {screen === "photos" && `Фото: ${selectedProject?.title}`}
+          {screen === "edit" && `Редактировать: ${selectedProject?.title}`}
+          {screen === "new" && "Новый объект"}
+        </h1>
         <a href="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">← На сайт</a>
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-10">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-10">
-          {PROJECTS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => setSelectedProject(p.id)}
-              className={`text-left px-4 py-3 border text-sm transition-colors ${
-                selectedProject === p.id
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border hover:border-foreground"
-              }`}
-            >
-              <span className="text-xs opacity-50 block mb-0.5">
-                Объект {p.id} · {photos[String(p.id)]?.length || 0} фото
-              </span>
-              {p.title}
-            </button>
-          ))}
-        </div>
 
-        {selectedProject && (
+        {/* Список объектов */}
+        {screen === "projects" && (
           <div>
-            <h2 className="text-base font-medium mb-4">
-              {PROJECTS.find((p) => p.id === selectedProject)?.title}
-            </h2>
+            <div className="flex items-center justify-between mb-6">
+              <p className="text-sm text-muted-foreground">Всего объектов: {projects.length}</p>
+              <button onClick={openNew}
+                className="flex items-center gap-2 px-4 py-2 bg-foreground text-background text-sm hover:opacity-80 transition-opacity">
+                <Icon name="Plus" size={14} /> Добавить объект
+              </button>
+            </div>
+            <div className="space-y-3">
+              {projects.map(p => (
+                <div key={p.id} className="border border-border p-4 flex items-center gap-4">
+                  <div className="w-16 h-12 rounded overflow-hidden bg-secondary shrink-0">
+                    {photos[String(p.id)]?.[0] && (
+                      <img src={photos[String(p.id)][0].url} alt="" className="w-full h-full object-cover" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{p.title}</p>
+                    <p className="text-xs text-muted-foreground">{p.location} · {p.year} · {photos[String(p.id)]?.length || 0} фото</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => openPhotos(p)}
+                      className="text-xs px-3 py-1.5 border border-border hover:border-foreground transition-colors flex items-center gap-1">
+                      <Icon name="Image" size={12} /> Фото
+                    </button>
+                    <button onClick={() => openEdit(p)}
+                      className="text-xs px-3 py-1.5 border border-border hover:border-foreground transition-colors flex items-center gap-1">
+                      <Icon name="Pencil" size={12} /> Изменить
+                    </button>
+                    <button onClick={() => handleDeleteProject(p)}
+                      className="text-xs px-2 py-1.5 border border-border hover:border-red-500 hover:text-red-500 transition-colors">
+                      <Icon name="Trash2" size={12} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
+        {/* Форма создания / редактирования */}
+        {(screen === "edit" || screen === "new") && (
+          <div className="max-w-lg space-y-5">
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Название объекта *</label>
+              <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="Например: ЖК «Победа»"
+                className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Описание работ</label>
+              <input value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                placeholder="Вентиляция, кондиционирование · 5 000 м²"
+                className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Город / регион</label>
+                <input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+                  placeholder="Москва"
+                  className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Год</label>
+                <input value={form.year} onChange={e => setForm(f => ({ ...f, year: e.target.value }))}
+                  placeholder="2024"
+                  className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background" />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={handleSaveProject} disabled={saving || !form.title.trim()}
+                className="px-6 py-3 bg-foreground text-background text-sm hover:opacity-80 transition-opacity disabled:opacity-40">
+                {saving ? "Сохраняю..." : screen === "new" ? "Создать объект" : "Сохранить"}
+              </button>
+              <button onClick={() => setScreen("projects")}
+                className="px-6 py-3 border border-border text-sm hover:border-foreground transition-colors">
+                Отмена
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Управление фото */}
+        {screen === "photos" && selectedProject && (
+          <div>
             <div
-              className={`border-2 border-dashed rounded p-10 text-center cursor-pointer transition-colors mb-6 ${
-                dragOver ? "border-foreground bg-secondary" : "border-border hover:border-foreground/50"
-              }`}
+              className={`border-2 border-dashed rounded p-10 text-center cursor-pointer transition-colors mb-6 ${dragOverUpload ? "border-foreground bg-secondary" : "border-border hover:border-foreground/50"}`}
               onClick={() => inputRef.current?.click()}
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }}
+              onDragOver={e => { e.preventDefault(); setDragOverUpload(true) }}
+              onDragLeave={() => setDragOverUpload(false)}
+              onDrop={e => { e.preventDefault(); setDragOverUpload(false); handleFiles(e.dataTransfer.files) }}
             >
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(e) => handleFiles(e.target.files)}
-              />
+              <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
+                onChange={e => handleFiles(e.target.files)} />
               {uploading ? (
                 <p className="text-sm text-muted-foreground">Загружаю фотографии...</p>
               ) : (
@@ -214,49 +302,33 @@ export default function Admin() {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-sm font-medium">
-                    Фотографии объекта ({currentPhotos.length})
+                    Фотографии ({currentPhotos.length})
                     <span className="text-xs text-muted-foreground font-normal ml-2">— перетащите для изменения порядка</span>
                   </p>
                   {orderChanged && (
-                    <button
-                      onClick={handleSaveOrder}
-                      disabled={saving}
-                      className="text-xs px-3 py-1.5 bg-foreground text-background hover:opacity-80 transition-opacity disabled:opacity-50 flex items-center gap-1.5"
-                    >
+                    <button onClick={handleSaveOrder} disabled={saving}
+                      className="text-xs px-3 py-1.5 bg-foreground text-background hover:opacity-80 transition-opacity disabled:opacity-50 flex items-center gap-1.5">
                       <Icon name="Save" size={12} />
                       {saving ? "Сохраняю..." : "Сохранить порядок"}
                     </button>
                   )}
                 </div>
-
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {currentPhotos.map((photo, i) => (
-                    <div
-                      key={photo.id}
-                      draggable
+                    <div key={photo.id} draggable
                       onDragStart={() => onDragStart(i)}
                       onDragEnter={() => onDragEnter(i)}
                       onDragEnd={onDragEnd}
-                      onDragOver={(e) => e.preventDefault()}
-                      className={`relative group aspect-[4/3] rounded overflow-hidden bg-secondary cursor-grab active:cursor-grabbing transition-all ${
-                        dropIndex === i && dragIndex !== i ? "ring-2 ring-foreground scale-[0.97]" : ""
-                      } ${dragIndex === i ? "opacity-50" : ""}`}
+                      onDragOver={e => e.preventDefault()}
+                      className={`relative group aspect-[4/3] rounded overflow-hidden bg-secondary cursor-grab active:cursor-grabbing transition-all ${dropIndex === i && dragIndex !== i ? "ring-2 ring-foreground scale-[0.97]" : ""} ${dragIndex === i ? "opacity-50" : ""}`}
                     >
                       <img src={photo.url} alt="" className="w-full h-full object-cover pointer-events-none" />
                       {i === 0 && (
-                        <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded">
-                          Обложка
-                        </div>
+                        <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded">Обложка</div>
                       )}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {i !== 0 && <div className="bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">#{i + 1}</div>}
-                      </div>
-                      <button
-                        onClick={() => handleDelete(photo.id)}
-                        className="absolute top-2 right-2 bg-black/70 hover:bg-red-600 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all"
-                        title="Удалить"
-                      >
+                      <button onClick={() => handleDeletePhoto(photo.id)}
+                        className="absolute top-2 right-2 bg-black/70 hover:bg-red-600 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all">
                         <Icon name="Trash2" size={14} />
                       </button>
                     </div>
