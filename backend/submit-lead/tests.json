@@ -19,6 +19,13 @@
       "path": "/",
       "body": { "name": "Иван" },
       "expectedStatus": 400
+    },
+    {
+      "name": "Письмо — нет email",
+      "method": "POST",
+      "path": "/",
+      "body": { "type": "letter", "name": "Иван" },
+      "expectedStatus": 400
     }
   ]
 }
