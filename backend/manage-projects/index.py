@@ -60,6 +60,17 @@ def handler(event: dict, context) -> dict:
             leads = [{"id": r[0], "name": r[1], "phone": r[2], "message": r[3], "created_at": r[4].isoformat(), "read": r[5] is not None} for r in rows]
             return {"statusCode": 200, "headers": cors, "body": json.dumps({"leads": leads})}
 
+        # GET контента сайта — публичный
+        if resource == "content":
+            conn = get_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT key, value, label, section FROM site_content ORDER BY section, key")
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            content = {r[0]: {"value": r[1], "label": r[2], "section": r[3]} for r in rows}
+            return {"statusCode": 200, "headers": cors, "body": json.dumps({"content": content})}
+
         # GET вакансий — публичный (только активные), с паролем — все
         if resource == "vacancies":
             conn = get_conn()
@@ -91,6 +102,20 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
 
     resource = body.get("resource", "")
+
+    # --- Обновление контента ---
+    if resource == "content":
+        updates = body.get("updates", {})
+        if not updates:
+            return {"statusCode": 400, "headers": cors, "body": json.dumps({"error": "Нет данных"})}
+        conn = get_conn()
+        cur = conn.cursor()
+        for key, value in updates.items():
+            cur.execute("UPDATE site_content SET value=%s WHERE key=%s", (value, key))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"statusCode": 200, "headers": cors, "body": json.dumps({"ok": True})}
 
     # --- CRUD вакансий ---
     if resource == "vacancy":

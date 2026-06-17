@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react"
 import func2url from "../../backend/func2url.json"
 import Icon from "@/components/ui/icon"
+import { invalidateContent } from "@/hooks/useSiteContent"
 
 const UPLOAD_URL = (func2url as Record<string, string>)["upload-photo"]
 const GET_PHOTOS_URL = (func2url as Record<string, string>)["get-photos"]
@@ -15,6 +16,18 @@ type Screen = "projects" | "photos" | "edit" | "new"
 type Lead = { id: number; name: string; phone: string; message: string | null; created_at: string; read: boolean }
 type Vacancy = { id: number; title: string; description: string; salary: string; location: string; active: boolean }
 type VacancyForm = { title: string; description: string; salary: string; location: string; active: boolean }
+type ContentItem = { value: string; label: string; section: string }
+type ContentMap = Record<string, ContentItem>
+
+const SECTION_LABELS: Record<string, string> = {
+  hero: "Главный экран",
+  about: "О компании",
+  stats: "Статистика",
+  expertise: "Виды работ",
+  faq: "Вопросы и ответы",
+  contacts: "Контакты",
+  cta: "Форма заявки",
+}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -34,7 +47,7 @@ export default function Admin() {
   const [password, setPassword] = useState("")
   const [authed, setAuthed] = useState(false)
   const [authError, setAuthError] = useState("")
-  const [tab, setTab] = useState<"portfolio" | "leads" | "vacancies">("portfolio")
+  const [tab, setTab] = useState<"portfolio" | "leads" | "vacancies" | "content">("portfolio")
   const [screen, setScreen] = useState<Screen>("projects")
   const [projects, setProjects] = useState<Project[]>([])
   const [photos, setPhotos] = useState<PhotoMap>({})
@@ -54,6 +67,11 @@ export default function Admin() {
   const [vacancyScreen, setVacancyScreen] = useState<"list" | "edit" | "new">("list")
   const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null)
   const [vacancyForm, setVacancyForm] = useState<VacancyForm>({ title: "", description: "", salary: "", location: "", active: true })
+  const [siteContent, setSiteContent] = useState<ContentMap>({})
+  const [contentEdits, setContentEdits] = useState<Record<string, string>>({})
+  const [contentSection, setContentSection] = useState<string>("hero")
+  const [contentSaving, setContentSaving] = useState(false)
+  const [contentSaved, setContentSaved] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const loadAll = () => {
@@ -64,6 +82,36 @@ export default function Admin() {
   const loadVacancies = () => {
     fetch(`${MANAGE_URL}?resource=vacancies&password=${encodeURIComponent(ADMIN_PASSWORD)}`)
       .then(r => r.json()).then(d => setVacancies(d.vacancies || [])).catch(() => {})
+  }
+
+  const loadContent = () => {
+    fetch(`${MANAGE_URL}?resource=content`)
+      .then(r => r.json())
+      .then(d => {
+        setSiteContent(d.content || {})
+        setContentEdits({})
+      })
+      .catch(() => {})
+  }
+
+  const handleContentChange = (key: string, value: string) => {
+    setContentEdits(prev => ({ ...prev, [key]: value }))
+    setContentSaved(false)
+  }
+
+  const handleContentSave = async () => {
+    if (Object.keys(contentEdits).length === 0) return
+    setContentSaving(true)
+    await fetch(MANAGE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resource: "content", password: ADMIN_PASSWORD, updates: contentEdits }),
+    })
+    setContentSaving(false)
+    setContentSaved(true)
+    loadContent()
+    invalidateContent()
+    setTimeout(() => setContentSaved(false), 3000)
   }
 
   const loadUnreadCount = useCallback(() => {
@@ -90,6 +138,7 @@ export default function Admin() {
       loadAll()
       loadUnreadCount()
       loadVacancies()
+      loadContent()
     }
   }, [authed, loadUnreadCount])
 
@@ -289,10 +338,92 @@ export default function Admin() {
           >
             Вакансии
           </button>
+          <button
+            onClick={() => setTab("content")}
+            className={`px-5 py-3 text-sm border-b-2 transition-colors ${tab === "content" ? "border-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            Контент сайта
+          </button>
         </div>
       )}
 
       <div className="max-w-4xl mx-auto px-6 py-10">
+
+        {/* === КОНТЕНТ САЙТА === */}
+        {tab === "content" && (
+          <div>
+            {/* Секции-табы */}
+            <div className="flex flex-wrap gap-2 mb-8">
+              {Object.entries(SECTION_LABELS).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setContentSection(key)}
+                  className={`px-4 py-2 text-sm border transition-colors ${contentSection === key ? "bg-foreground text-background border-foreground" : "border-border hover:border-foreground"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Поля текущей секции */}
+            <div className="max-w-2xl space-y-5">
+              {Object.entries(siteContent)
+                .filter(([, item]) => item.section === contentSection)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([key, item]) => {
+                  const currentVal = key in contentEdits ? contentEdits[key] : item.value
+                  const isLong = item.value.length > 80
+                  const isChanged = key in contentEdits && contentEdits[key] !== item.value
+                  return (
+                    <div key={key}>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider mb-1.5">
+                        {item.label}
+                        {isChanged && <span className="text-orange-400 normal-case tracking-normal text-[10px] font-medium">● изменено</span>}
+                      </label>
+                      {isLong ? (
+                        <textarea
+                          value={currentVal}
+                          onChange={e => handleContentChange(key, e.target.value)}
+                          rows={currentVal.length > 200 ? 5 : 3}
+                          className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background resize-none"
+                        />
+                      ) : (
+                        <input
+                          value={currentVal}
+                          onChange={e => handleContentChange(key, e.target.value)}
+                          className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background"
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
+
+            {/* Кнопка сохранения */}
+            <div className="max-w-2xl mt-8 flex items-center gap-4">
+              <button
+                onClick={handleContentSave}
+                disabled={contentSaving || Object.keys(contentEdits).length === 0}
+                className="px-6 py-3 bg-foreground text-background text-sm hover:opacity-80 transition-opacity disabled:opacity-40"
+              >
+                {contentSaving ? "Сохраняю..." : "Сохранить изменения"}
+              </button>
+              {Object.keys(contentEdits).length > 0 && !contentSaving && (
+                <button
+                  onClick={() => { setContentEdits({}); setContentSaved(false) }}
+                  className="px-4 py-3 border border-border text-sm hover:border-foreground transition-colors"
+                >
+                  Отменить
+                </button>
+              )}
+              {contentSaved && (
+                <span className="text-sm text-green-600 flex items-center gap-1.5">
+                  <Icon name="CheckCircle" size={14} /> Сохранено
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* === ЗАЯВКИ === */}
         {tab === "leads" && (
