@@ -1,8 +1,10 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import func2url from "../../backend/func2url.json"
 import Icon from "@/components/ui/icon"
 
 const UPLOAD_URL = (func2url as Record<string, string>)["upload-photo"]
+const GET_PHOTOS_URL = (func2url as Record<string, string>)["get-photos"]
+const ADMIN_PASSWORD = "mkm2024admin"
 
 const PROJECTS = [
   { id: 1, title: "МТС-2, д. Радумля" },
@@ -13,6 +15,9 @@ const PROJECTS = [
   { id: 6, title: "Завод Coca-Cola" },
   { id: 7, title: "ЖК «Filicity»" },
 ]
+
+type Photo = { id: number; url: string }
+type PhotoMap = Record<string, Photo[]>
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -28,14 +33,24 @@ export default function Admin() {
   const [authed, setAuthed] = useState(false)
   const [authError, setAuthError] = useState("")
   const [selectedProject, setSelectedProject] = useState<number | null>(null)
-  const [uploadedUrls, setUploadedUrls] = useState<Record<number, string[]>>({})
+  const [photos, setPhotos] = useState<PhotoMap>({})
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const loadPhotos = () => {
+    fetch(GET_PHOTOS_URL)
+      .then((r) => r.json())
+      .then((data) => setPhotos(data.photos || {}))
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    if (authed) loadPhotos()
+  }, [authed])
+
   const handleLogin = () => {
-    if (password === "mkm2024admin") {
+    if (password === ADMIN_PASSWORD) {
       setAuthed(true)
       setAuthError("")
     } else {
@@ -46,30 +61,25 @@ export default function Admin() {
   const handleFiles = async (files: FileList | null) => {
     if (!files || !selectedProject) return
     setUploading(true)
-
-    const urls: string[] = []
     for (const file of Array.from(files)) {
       const base64 = await fileToBase64(file)
-      const res = await fetch(UPLOAD_URL, {
+      await fetch(UPLOAD_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: "mkm2024admin", image: base64, contentType: file.type }),
+        body: JSON.stringify({ password: ADMIN_PASSWORD, image: base64, contentType: file.type, projectId: selectedProject }),
       })
-      const data = await res.json()
-      if (data.url) urls.push(data.url)
     }
-
-    setUploadedUrls((prev) => ({
-      ...prev,
-      [selectedProject]: [...(prev[selectedProject] || []), ...urls],
-    }))
     setUploading(false)
+    loadPhotos()
   }
 
-  const copyUrl = (url: string) => {
-    navigator.clipboard.writeText(url)
-    setCopiedUrl(url)
-    setTimeout(() => setCopiedUrl(null), 2000)
+  const handleDelete = async (photoId: number) => {
+    await fetch(UPLOAD_URL, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, id: photoId }),
+    })
+    loadPhotos()
   }
 
   if (!authed) {
@@ -99,6 +109,8 @@ export default function Admin() {
     )
   }
 
+  const currentPhotos = selectedProject ? (photos[String(selectedProject)] || []) : []
+
   return (
     <div className="min-h-screen bg-background">
       <div className="border-b border-border px-6 py-4 flex items-center justify-between">
@@ -107,8 +119,6 @@ export default function Admin() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-10">
-        <p className="text-sm text-muted-foreground mb-6">Выберите объект и загрузите фотографии. Скопируйте полученные ссылки и передайте разработчику для обновления сайта.</p>
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-10">
           {PROJECTS.map((p) => (
             <button
@@ -120,7 +130,9 @@ export default function Admin() {
                   : "border-border hover:border-foreground"
               }`}
             >
-              <span className="text-xs opacity-50 block mb-0.5">Объект {p.id}</span>
+              <span className="text-xs opacity-50 block mb-0.5">
+                Объект {p.id} · {photos[String(p.id)]?.length || 0} фото
+              </span>
               {p.title}
             </button>
           ))}
@@ -160,20 +172,19 @@ export default function Admin() {
               )}
             </div>
 
-            {(uploadedUrls[selectedProject] || []).length > 0 && (
+            {currentPhotos.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-3">Загруженные фотографии:</p>
-                <div className="space-y-3">
-                  {(uploadedUrls[selectedProject] || []).map((url) => (
-                    <div key={url} className="flex items-center gap-3 border border-border p-3 rounded">
-                      <img src={url} alt="" className="w-16 h-12 object-cover rounded shrink-0" />
-                      <p className="text-xs text-muted-foreground truncate flex-1">{url}</p>
+                <p className="text-sm font-medium mb-3">Фотографии объекта ({currentPhotos.length}):</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {currentPhotos.map((photo) => (
+                    <div key={photo.id} className="relative group aspect-[4/3] rounded overflow-hidden bg-secondary">
+                      <img src={photo.url} alt="" className="w-full h-full object-cover" />
                       <button
-                        onClick={() => copyUrl(url)}
-                        className="shrink-0 text-xs px-3 py-1.5 border border-border hover:border-foreground transition-colors flex items-center gap-1.5"
+                        onClick={() => handleDelete(photo.id)}
+                        className="absolute top-2 right-2 bg-black/70 hover:bg-red-600 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all"
+                        title="Удалить"
                       >
-                        <Icon name={copiedUrl === url ? "Check" : "Copy"} size={12} />
-                        {copiedUrl === url ? "Скопировано" : "Копировать"}
+                        <Icon name="Trash2" size={14} />
                       </button>
                     </div>
                   ))}
