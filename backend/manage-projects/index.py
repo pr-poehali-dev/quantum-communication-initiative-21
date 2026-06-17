@@ -60,6 +60,21 @@ def handler(event: dict, context) -> dict:
             leads = [{"id": r[0], "name": r[1], "phone": r[2], "message": r[3], "created_at": r[4].isoformat(), "read": r[5] is not None} for r in rows]
             return {"statusCode": 200, "headers": cors, "body": json.dumps({"leads": leads})}
 
+        # GET вакансий — публичный (только активные), с паролем — все
+        if resource == "vacancies":
+            conn = get_conn()
+            cur = conn.cursor()
+            pwd = params.get("password")
+            if pwd == ADMIN_PASSWORD:
+                cur.execute("SELECT id, title, description, salary, location, active FROM vacancies ORDER BY sort_order, id")
+            else:
+                cur.execute("SELECT id, title, description, salary, location, active FROM vacancies WHERE active=TRUE ORDER BY sort_order, id")
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            vacancies = [{"id": r[0], "title": r[1], "description": r[2], "salary": r[3], "location": r[4], "active": r[5]} for r in rows]
+            return {"statusCode": 200, "headers": cors, "body": json.dumps({"vacancies": vacancies})}
+
         # GET объектов — публичный
         conn = get_conn()
         cur = conn.cursor()
@@ -75,6 +90,54 @@ def handler(event: dict, context) -> dict:
     if body.get("password") != ADMIN_PASSWORD:
         return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
 
+    resource = body.get("resource", "")
+
+    # --- CRUD вакансий ---
+    if resource == "vacancy":
+        if method == "POST":
+            title = body.get("title", "").strip()
+            if not title:
+                return {"statusCode": 400, "headers": cors, "body": json.dumps({"error": "Нет названия"})}
+            conn = get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO vacancies (title, description, salary, location, active, sort_order) VALUES (%s, %s, %s, %s, %s, (SELECT COALESCE(MAX(sort_order)+1,0) FROM vacancies)) RETURNING id",
+                (title, body.get("description", ""), body.get("salary", ""), body.get("location", ""), body.get("active", True))
+            )
+            new_id = cur.fetchone()[0]
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {"statusCode": 200, "headers": cors, "body": json.dumps({"id": new_id})}
+
+        if method == "PUT":
+            vid = body.get("id")
+            if not vid:
+                return {"statusCode": 400, "headers": cors, "body": json.dumps({"error": "Нет id"})}
+            conn = get_conn()
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE vacancies SET title=%s, description=%s, salary=%s, location=%s, active=%s WHERE id=%s",
+                (body.get("title", ""), body.get("description", ""), body.get("salary", ""), body.get("location", ""), body.get("active", True), vid)
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {"statusCode": 200, "headers": cors, "body": json.dumps({"ok": True})}
+
+        if method == "DELETE":
+            vid = body.get("id")
+            if not vid:
+                return {"statusCode": 400, "headers": cors, "body": json.dumps({"error": "Нет id"})}
+            conn = get_conn()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM vacancies WHERE id=%s", (vid,))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return {"statusCode": 200, "headers": cors, "body": json.dumps({"ok": True})}
+
+    # --- CRUD проектов ---
     if method == "POST":
         title = body.get("title", "").strip()
         if not title:

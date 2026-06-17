@@ -13,6 +13,8 @@ type Photo = { id: number; url: string }
 type PhotoMap = Record<string, Photo[]>
 type Screen = "projects" | "photos" | "edit" | "new"
 type Lead = { id: number; name: string; phone: string; message: string | null; created_at: string; read: boolean }
+type Vacancy = { id: number; title: string; description: string; salary: string; location: string; active: boolean }
+type VacancyForm = { title: string; description: string; salary: string; location: string; active: boolean }
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -32,7 +34,7 @@ export default function Admin() {
   const [password, setPassword] = useState("")
   const [authed, setAuthed] = useState(false)
   const [authError, setAuthError] = useState("")
-  const [tab, setTab] = useState<"portfolio" | "leads">("portfolio")
+  const [tab, setTab] = useState<"portfolio" | "leads" | "vacancies">("portfolio")
   const [screen, setScreen] = useState<Screen>("projects")
   const [projects, setProjects] = useState<Project[]>([])
   const [photos, setPhotos] = useState<PhotoMap>({})
@@ -48,11 +50,20 @@ export default function Admin() {
   const [leadsLoading, setLeadsLoading] = useState(false)
   const [expandedLead, setExpandedLead] = useState<number | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [vacancies, setVacancies] = useState<Vacancy[]>([])
+  const [vacancyScreen, setVacancyScreen] = useState<"list" | "edit" | "new">("list")
+  const [editingVacancy, setEditingVacancy] = useState<Vacancy | null>(null)
+  const [vacancyForm, setVacancyForm] = useState<VacancyForm>({ title: "", description: "", salary: "", location: "", active: true })
   const inputRef = useRef<HTMLInputElement>(null)
 
   const loadAll = () => {
     fetch(MANAGE_URL).then(r => r.json()).then(d => setProjects(d.projects || [])).catch(() => {})
     fetch(GET_PHOTOS_URL).then(r => r.json()).then(d => setPhotos(d.photos || {})).catch(() => {})
+  }
+
+  const loadVacancies = () => {
+    fetch(`${MANAGE_URL}?resource=vacancies&password=${encodeURIComponent(ADMIN_PASSWORD)}`)
+      .then(r => r.json()).then(d => setVacancies(d.vacancies || [])).catch(() => {})
   }
 
   const loadUnreadCount = useCallback(() => {
@@ -78,8 +89,13 @@ export default function Admin() {
     if (authed) {
       loadAll()
       loadUnreadCount()
+      loadVacancies()
     }
   }, [authed, loadUnreadCount])
+
+  useEffect(() => {
+    if (authed && tab === "vacancies") loadVacancies()
+  }, [tab, authed])
 
   // Опрашиваем счётчик каждые 30 секунд
   useEffect(() => {
@@ -130,6 +146,34 @@ export default function Admin() {
     if (!confirm(`Удалить объект «${p.title}» и все его фото?`)) return
     await fetch(MANAGE_URL, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: ADMIN_PASSWORD, id: p.id }) })
     loadAll()
+  }
+
+  const openNewVacancy = () => {
+    setVacancyForm({ title: "", description: "", salary: "", location: "", active: true })
+    setEditingVacancy(null)
+    setVacancyScreen("new")
+  }
+  const openEditVacancy = (v: Vacancy) => {
+    setVacancyForm({ title: v.title, description: v.description, salary: v.salary, location: v.location, active: v.active })
+    setEditingVacancy(v)
+    setVacancyScreen("edit")
+  }
+  const handleSaveVacancy = async () => {
+    if (!vacancyForm.title.trim()) return
+    setSaving(true)
+    const method = vacancyScreen === "edit" ? "PUT" : "POST"
+    const body = vacancyScreen === "edit"
+      ? { resource: "vacancy", password: ADMIN_PASSWORD, id: editingVacancy!.id, ...vacancyForm }
+      : { resource: "vacancy", password: ADMIN_PASSWORD, ...vacancyForm }
+    await fetch(MANAGE_URL, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    setSaving(false)
+    loadVacancies()
+    setVacancyScreen("list")
+  }
+  const handleDeleteVacancy = async (v: Vacancy) => {
+    if (!confirm(`Удалить вакансию «${v.title}»?`)) return
+    await fetch(MANAGE_URL, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resource: "vacancy", password: ADMIN_PASSWORD, id: v.id }) })
+    loadVacancies()
   }
 
   const handleFiles = async (files: FileList | null) => {
@@ -192,18 +236,25 @@ export default function Admin() {
   const savedOrder = photos[String(selectedProject?.id)] || []
   const orderChanged = JSON.stringify(currentPhotos.map(p => p.id)) !== JSON.stringify(savedOrder.map(p => p.id))
   const isPortfolioSubscreen = screen !== "projects" && tab === "portfolio"
+  const isVacancySubscreen = vacancyScreen !== "list" && tab === "vacancies"
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="border-b border-border px-6 py-4 flex items-center gap-4">
-        {isPortfolioSubscreen && (
-          <button onClick={() => setScreen("projects")} className="text-muted-foreground hover:text-foreground transition-colors">
+        {(isPortfolioSubscreen || isVacancySubscreen) && (
+          <button
+            onClick={() => { if (isPortfolioSubscreen) setScreen("projects"); else setVacancyScreen("list") }}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
             <Icon name="ArrowLeft" size={18} />
           </button>
         )}
         <h1 className="text-lg font-medium flex-1">
           {tab === "leads" && "Заявки с сайта"}
+          {tab === "vacancies" && vacancyScreen === "list" && "Вакансии"}
+          {tab === "vacancies" && vacancyScreen === "new" && "Новая вакансия"}
+          {tab === "vacancies" && vacancyScreen === "edit" && `Редактировать: ${editingVacancy?.title}`}
           {tab === "portfolio" && screen === "projects" && "Управление портфолио"}
           {tab === "portfolio" && screen === "photos" && `Фото: ${selectedProject?.title}`}
           {tab === "portfolio" && screen === "edit" && `Редактировать: ${selectedProject?.title}`}
@@ -231,6 +282,12 @@ export default function Admin() {
                 {unreadCount > 99 ? "99+" : unreadCount}
               </span>
             )}
+          </button>
+          <button
+            onClick={() => { setTab("vacancies"); setVacancyScreen("list") }}
+            className={`px-5 py-3 text-sm border-b-2 transition-colors ${tab === "vacancies" ? "border-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          >
+            Вакансии
           </button>
         </div>
       )}
@@ -327,6 +384,110 @@ export default function Admin() {
               ))}
             </div>
           </div>
+        )}
+
+        {/* === ВАКАНСИИ === */}
+        {tab === "vacancies" && (
+          <>
+            {vacancyScreen === "list" && (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-sm text-muted-foreground">Вакансий: {vacancies.length}</p>
+                  <button onClick={openNewVacancy}
+                    className="flex items-center gap-2 px-4 py-2 bg-foreground text-background text-sm hover:opacity-80 transition-opacity">
+                    <Icon name="Plus" size={14} /> Добавить вакансию
+                  </button>
+                </div>
+                {vacancies.length === 0 && (
+                  <div className="text-center py-16 text-muted-foreground">
+                    <Icon name="Briefcase" size={40} className="mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">Вакансий пока нет</p>
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {vacancies.map(v => (
+                    <div key={v.id} className="border border-border p-4 flex items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-medium text-sm">{v.title}</p>
+                          {!v.active && (
+                            <span className="text-xs bg-secondary text-muted-foreground px-2 py-0.5 rounded">Скрыта</span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          {v.salary && <p className="text-xs text-muted-foreground">💰 {v.salary}</p>}
+                          {v.location && <p className="text-xs text-muted-foreground">📍 {v.location}</p>}
+                        </div>
+                        {v.description && (
+                          <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{v.description}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => openEditVacancy(v)}
+                          className="text-xs px-3 py-1.5 border border-border hover:border-foreground transition-colors flex items-center gap-1">
+                          <Icon name="Pencil" size={12} /> Изменить
+                        </button>
+                        <button onClick={() => handleDeleteVacancy(v)}
+                          className="text-xs px-2 py-1.5 border border-border hover:border-red-500 hover:text-red-500 transition-colors">
+                          <Icon name="Trash2" size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(vacancyScreen === "new" || vacancyScreen === "edit") && (
+              <div className="max-w-lg space-y-5">
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Должность *</label>
+                  <input value={vacancyForm.title} onChange={e => setVacancyForm(f => ({ ...f, title: e.target.value }))}
+                    placeholder="Например: Монтажник ОВиК"
+                    className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background" />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Зарплата</label>
+                    <input value={vacancyForm.salary} onChange={e => setVacancyForm(f => ({ ...f, salary: e.target.value }))}
+                      placeholder="от 80 000 ₽"
+                      className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Город</label>
+                    <input value={vacancyForm.location} onChange={e => setVacancyForm(f => ({ ...f, location: e.target.value }))}
+                      placeholder="Нижний Новгород"
+                      className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Описание / требования</label>
+                  <textarea value={vacancyForm.description} onChange={e => setVacancyForm(f => ({ ...f, description: e.target.value }))}
+                    rows={6} placeholder={"Обязанности:\n— монтаж систем вентиляции\n\nТребования:\n— опыт от 2 лет"}
+                    className="w-full border border-border px-4 py-3 text-sm outline-none focus:border-foreground transition-colors bg-background resize-none" />
+                </div>
+                <label className="flex items-center gap-3 cursor-pointer select-none">
+                  <div
+                    onClick={() => setVacancyForm(f => ({ ...f, active: !f.active }))}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${vacancyForm.active ? "bg-foreground" : "bg-border"}`}
+                  >
+                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-background transition-transform ${vacancyForm.active ? "translate-x-5" : "translate-x-0.5"}`} />
+                  </div>
+                  <span className="text-sm">{vacancyForm.active ? "Опубликована (видна на сайте)" : "Скрыта (не видна на сайте)"}</span>
+                </label>
+                <div className="flex gap-3 pt-2">
+                  <button onClick={handleSaveVacancy} disabled={saving || !vacancyForm.title.trim()}
+                    className="px-6 py-3 bg-foreground text-background text-sm hover:opacity-80 transition-opacity disabled:opacity-40">
+                    {saving ? "Сохраняю..." : vacancyScreen === "new" ? "Создать вакансию" : "Сохранить"}
+                  </button>
+                  <button onClick={() => setVacancyScreen("list")}
+                    className="px-6 py-3 border border-border text-sm hover:border-foreground transition-colors">
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* === ПОРТФОЛИО === */}
