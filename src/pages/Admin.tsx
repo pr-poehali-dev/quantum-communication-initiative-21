@@ -4,6 +4,7 @@ import Icon from "@/components/ui/icon"
 
 const UPLOAD_URL = (func2url as Record<string, string>)["upload-photo"]
 const GET_PHOTOS_URL = (func2url as Record<string, string>)["get-photos"]
+const REORDER_URL = (func2url as Record<string, string>)["reorder-photos"]
 const ADMIN_PASSWORD = "mkm2024admin"
 
 const PROJECTS = [
@@ -34,8 +35,12 @@ export default function Admin() {
   const [authError, setAuthError] = useState("")
   const [selectedProject, setSelectedProject] = useState<number | null>(null)
   const [photos, setPhotos] = useState<PhotoMap>({})
+  const [currentPhotos, setCurrentPhotos] = useState<Photo[]>([])
   const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const loadPhotos = () => {
@@ -48,6 +53,12 @@ export default function Admin() {
   useEffect(() => {
     if (authed) loadPhotos()
   }, [authed])
+
+  useEffect(() => {
+    if (selectedProject) {
+      setCurrentPhotos(photos[String(selectedProject)] || [])
+    }
+  }, [selectedProject, photos])
 
   const handleLogin = () => {
     if (password === ADMIN_PASSWORD) {
@@ -82,6 +93,32 @@ export default function Admin() {
     loadPhotos()
   }
 
+  const handleSaveOrder = async () => {
+    setSaving(true)
+    await fetch(REORDER_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: ADMIN_PASSWORD, ids: currentPhotos.map((p) => p.id) }),
+    })
+    setSaving(false)
+    loadPhotos()
+  }
+
+  // drag-and-drop handlers
+  const onDragStart = (i: number) => setDragIndex(i)
+  const onDragEnter = (i: number) => setDropIndex(i)
+
+  const onDragEnd = () => {
+    if (dragIndex !== null && dropIndex !== null && dragIndex !== dropIndex) {
+      const updated = [...currentPhotos]
+      const [moved] = updated.splice(dragIndex, 1)
+      updated.splice(dropIndex, 0, moved)
+      setCurrentPhotos(updated)
+    }
+    setDragIndex(null)
+    setDropIndex(null)
+  }
+
   if (!authed) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -109,7 +146,8 @@ export default function Admin() {
     )
   }
 
-  const currentPhotos = selectedProject ? (photos[String(selectedProject)] || []) : []
+  const savedOrder = photos[String(selectedProject)] || []
+  const orderChanged = JSON.stringify(currentPhotos.map((p) => p.id)) !== JSON.stringify(savedOrder.map((p) => p.id))
 
   return (
     <div className="min-h-screen bg-background">
@@ -174,11 +212,46 @@ export default function Admin() {
 
             {currentPhotos.length > 0 && (
               <div>
-                <p className="text-sm font-medium mb-3">Фотографии объекта ({currentPhotos.length}):</p>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-medium">
+                    Фотографии объекта ({currentPhotos.length})
+                    <span className="text-xs text-muted-foreground font-normal ml-2">— перетащите для изменения порядка</span>
+                  </p>
+                  {orderChanged && (
+                    <button
+                      onClick={handleSaveOrder}
+                      disabled={saving}
+                      className="text-xs px-3 py-1.5 bg-foreground text-background hover:opacity-80 transition-opacity disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Icon name="Save" size={12} />
+                      {saving ? "Сохраняю..." : "Сохранить порядок"}
+                    </button>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {currentPhotos.map((photo) => (
-                    <div key={photo.id} className="relative group aspect-[4/3] rounded overflow-hidden bg-secondary">
-                      <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                  {currentPhotos.map((photo, i) => (
+                    <div
+                      key={photo.id}
+                      draggable
+                      onDragStart={() => onDragStart(i)}
+                      onDragEnter={() => onDragEnter(i)}
+                      onDragEnd={onDragEnd}
+                      onDragOver={(e) => e.preventDefault()}
+                      className={`relative group aspect-[4/3] rounded overflow-hidden bg-secondary cursor-grab active:cursor-grabbing transition-all ${
+                        dropIndex === i && dragIndex !== i ? "ring-2 ring-foreground scale-[0.97]" : ""
+                      } ${dragIndex === i ? "opacity-50" : ""}`}
+                    >
+                      <img src={photo.url} alt="" className="w-full h-full object-cover pointer-events-none" />
+                      {i === 0 && (
+                        <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded">
+                          Обложка
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                      <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {i !== 0 && <div className="bg-black/50 text-white text-xs px-1.5 py-0.5 rounded">#{i + 1}</div>}
+                      </div>
                       <button
                         onClick={() => handleDelete(photo.id)}
                         className="absolute top-2 right-2 bg-black/70 hover:bg-red-600 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-all"
