@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import func2url from "../../backend/func2url.json"
 import Icon from "@/components/ui/icon"
 
@@ -11,8 +11,8 @@ const ADMIN_PASSWORD = "mkm2024admin"
 type Project = { id: number; title: string; category: string; location: string; year: string }
 type Photo = { id: number; url: string }
 type PhotoMap = Record<string, Photo[]>
-type Screen = "projects" | "photos" | "edit" | "new" | "leads"
-type Lead = { id: number; name: string; phone: string; message: string | null; created_at: string }
+type Screen = "projects" | "photos" | "edit" | "new"
+type Lead = { id: number; name: string; phone: string; message: string | null; created_at: string; read: boolean }
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -47,6 +47,7 @@ export default function Admin() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [leadsLoading, setLeadsLoading] = useState(false)
   const [expandedLead, setExpandedLead] = useState<number | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const loadAll = () => {
@@ -54,11 +55,21 @@ export default function Admin() {
     fetch(GET_PHOTOS_URL).then(r => r.json()).then(d => setPhotos(d.photos || {})).catch(() => {})
   }
 
+  const loadUnreadCount = useCallback(() => {
+    fetch(`${MANAGE_URL}?resource=leads_count&password=${encodeURIComponent(ADMIN_PASSWORD)}`)
+      .then(r => r.json())
+      .then(d => setUnreadCount(d.unread || 0))
+      .catch(() => {})
+  }, [])
+
   const loadLeads = () => {
     setLeadsLoading(true)
     fetch(`${MANAGE_URL}?resource=leads&password=${encodeURIComponent(ADMIN_PASSWORD)}`)
       .then(r => r.json())
-      .then(d => setLeads(d.leads || []))
+      .then(d => {
+        setLeads(d.leads || [])
+        setUnreadCount(0) // все прочитаны после открытия вкладки
+      })
       .catch(() => {})
       .finally(() => setLeadsLoading(false))
   }
@@ -66,9 +77,21 @@ export default function Admin() {
   useEffect(() => {
     if (authed) {
       loadAll()
-      loadLeads()
+      loadUnreadCount()
     }
-  }, [authed])
+  }, [authed, loadUnreadCount])
+
+  // Опрашиваем счётчик каждые 30 секунд
+  useEffect(() => {
+    if (!authed) return
+    const interval = setInterval(loadUnreadCount, 30_000)
+    return () => clearInterval(interval)
+  }, [authed, loadUnreadCount])
+
+  // Загружаем заявки при переключении на вкладку
+  useEffect(() => {
+    if (authed && tab === "leads") loadLeads()
+  }, [tab, authed])
 
   useEffect(() => {
     if (selectedProject) setCurrentPhotos(photos[String(selectedProject.id)] || [])
@@ -168,7 +191,6 @@ export default function Admin() {
 
   const savedOrder = photos[String(selectedProject?.id)] || []
   const orderChanged = JSON.stringify(currentPhotos.map(p => p.id)) !== JSON.stringify(savedOrder.map(p => p.id))
-
   const isPortfolioSubscreen = screen !== "projects" && tab === "portfolio"
 
   return (
@@ -192,7 +214,7 @@ export default function Admin() {
 
       {/* Tabs */}
       {!isPortfolioSubscreen && (
-        <div className="border-b border-border px-6 flex gap-0">
+        <div className="border-b border-border px-6 flex">
           <button
             onClick={() => { setTab("portfolio"); setScreen("projects") }}
             className={`px-5 py-3 text-sm border-b-2 transition-colors ${tab === "portfolio" ? "border-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}
@@ -204,8 +226,10 @@ export default function Admin() {
             className={`px-5 py-3 text-sm border-b-2 transition-colors flex items-center gap-2 ${tab === "leads" ? "border-foreground font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}
           >
             Заявки
-            {leads.length > 0 && (
-              <span className="bg-foreground text-background text-xs px-1.5 py-0.5 rounded-full leading-none">{leads.length}</span>
+            {unreadCount > 0 && (
+              <span className="bg-red-500 text-white text-xs min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center leading-none font-medium">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
             )}
           </button>
         </div>
@@ -217,7 +241,14 @@ export default function Admin() {
         {tab === "leads" && (
           <div>
             <div className="flex items-center justify-between mb-6">
-              <p className="text-sm text-muted-foreground">Всего заявок: {leads.length}</p>
+              <p className="text-sm text-muted-foreground">
+                Всего заявок: {leads.length}
+                {leads.filter(l => !l.read).length > 0 && (
+                  <span className="ml-2 text-red-500 font-medium">
+                    · {leads.filter(l => !l.read).length} новых
+                  </span>
+                )}
+              </p>
               <button onClick={loadLeads} disabled={leadsLoading}
                 className="text-xs px-3 py-1.5 border border-border hover:border-foreground transition-colors flex items-center gap-1.5 disabled:opacity-50">
                 <Icon name="RefreshCw" size={12} />
@@ -232,24 +263,35 @@ export default function Admin() {
               </div>
             )}
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {leads.map(lead => (
-                <div key={lead.id} className="border border-border">
+                <div key={lead.id} className={`border transition-colors ${!lead.read ? "border-foreground/30 bg-secondary/40" : "border-border"}`}>
                   <button
                     onClick={() => setExpandedLead(expandedLead === lead.id ? null : lead.id)}
                     className="w-full flex items-center gap-4 p-4 text-left hover:bg-secondary/50 transition-colors"
                   >
-                    <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center shrink-0 text-sm font-medium">
-                      {lead.name.charAt(0).toUpperCase()}
+                    {/* Индикатор нового */}
+                    <div className="relative shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-secondary flex items-center justify-center text-sm font-medium">
+                        {lead.name.charAt(0).toUpperCase()}
+                      </div>
+                      {!lead.read && (
+                        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-background" />
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{lead.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className={`text-sm ${!lead.read ? "font-semibold" : "font-medium"}`}>{lead.name}</p>
+                        {!lead.read && (
+                          <span className="text-[10px] bg-red-500 text-white px-1.5 py-0.5 rounded uppercase tracking-wide leading-none">Новая</span>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">{lead.phone}</p>
                     </div>
                     <div className="text-right shrink-0">
                       <p className="text-xs text-muted-foreground">{formatDate(lead.created_at)}</p>
                       {lead.message && (
-                        <p className="text-xs text-muted-foreground/60 mt-0.5 max-w-[180px] truncate">{lead.message}</p>
+                        <p className="text-xs text-muted-foreground/60 mt-0.5 max-w-[160px] truncate">{lead.message}</p>
                       )}
                     </div>
                     <Icon name={expandedLead === lead.id ? "ChevronUp" : "ChevronDown"} size={14} className="text-muted-foreground shrink-0" />
@@ -273,9 +315,9 @@ export default function Admin() {
                           <p className="text-sm whitespace-pre-wrap bg-secondary/50 p-3 rounded">{lead.message}</p>
                         </div>
                       )}
-                      <div className="mt-4 flex gap-3">
+                      <div className="mt-4">
                         <a href={`tel:${lead.phone}`}
-                          className="text-xs px-3 py-1.5 bg-foreground text-background hover:opacity-80 transition-opacity flex items-center gap-1.5">
+                          className="text-xs px-3 py-1.5 bg-foreground text-background hover:opacity-80 transition-opacity flex items-center gap-1.5 inline-flex">
                           <Icon name="Phone" size={12} /> Позвонить
                         </a>
                       </div>
@@ -290,7 +332,6 @@ export default function Admin() {
         {/* === ПОРТФОЛИО === */}
         {tab === "portfolio" && (
           <>
-            {/* Список объектов */}
             {screen === "projects" && (
               <div>
                 <div className="flex items-center justify-between mb-6">
@@ -330,7 +371,6 @@ export default function Admin() {
               </div>
             )}
 
-            {/* Форма создания / редактирования */}
             {(screen === "edit" || screen === "new") && (
               <div className="max-w-lg space-y-5">
                 <div>
@@ -368,7 +408,6 @@ export default function Admin() {
               </div>
             )}
 
-            {/* Управление фото */}
             {screen === "photos" && selectedProject && (
               <div>
                 <div

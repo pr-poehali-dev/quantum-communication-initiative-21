@@ -1,10 +1,10 @@
 """
-CRUD управление объектами портфолио + чтение заявок.
-GET /?resource=leads&password=... — список заявок с сайта.
+CRUD управление объектами портфолио + чтение/управление заявками.
+GET /?resource=leads&password=... — список заявок, автоматически помечает все как прочитанные.
+GET /?resource=leads_count&password=... — количество непрочитанных заявок.
+PATCH + {resource:lead, id} — пометить заявку прочитанной вручную.
 GET — список всех объектов (публично).
-POST — создать новый объект.
-PUT — обновить объект (title, category, location, year).
-DELETE — удалить объект и все его фото.
+POST/PUT/DELETE — управление объектами.
 """
 import os
 import json
@@ -33,17 +33,31 @@ def handler(event: dict, context) -> dict:
         params = event.get("queryStringParameters") or {}
         resource = params.get("resource", "")
 
-        # GET заявок — только с паролем
+        # GET количества непрочитанных — только с паролем
+        if resource == "leads_count":
+            if params.get("password") != ADMIN_PASSWORD:
+                return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
+            conn = get_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM leads WHERE read_at IS NULL")
+            count = cur.fetchone()[0]
+            cur.close()
+            conn.close()
+            return {"statusCode": 200, "headers": cors, "body": json.dumps({"unread": count})}
+
+        # GET заявок — только с паролем, автоматически помечает все прочитанными
         if resource == "leads":
             if params.get("password") != ADMIN_PASSWORD:
                 return {"statusCode": 403, "headers": cors, "body": json.dumps({"error": "Неверный пароль"})}
             conn = get_conn()
             cur = conn.cursor()
-            cur.execute("SELECT id, name, phone, message, created_at FROM leads ORDER BY created_at DESC")
+            cur.execute("SELECT id, name, phone, message, created_at, read_at FROM leads ORDER BY created_at DESC")
             rows = cur.fetchall()
+            cur.execute("UPDATE leads SET read_at = NOW() WHERE read_at IS NULL")
+            conn.commit()
             cur.close()
             conn.close()
-            leads = [{"id": r[0], "name": r[1], "phone": r[2], "message": r[3], "created_at": r[4].isoformat()} for r in rows]
+            leads = [{"id": r[0], "name": r[1], "phone": r[2], "message": r[3], "created_at": r[4].isoformat(), "read": r[5] is not None} for r in rows]
             return {"statusCode": 200, "headers": cors, "body": json.dumps({"leads": leads})}
 
         # GET объектов — публичный
