@@ -13,6 +13,12 @@
       "method": "OPTIONS",
       "path": "/",
       "expectedStatus": 200
+    },
+    {
+      "name": "GET leads — wrong password",
+      "method": "GET",
+      "path": "/?resource=leads&password=wrong",
+      "expectedStatus": 403
     }
   ]
 }
